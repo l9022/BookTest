@@ -1,0 +1,199 @@
+'=========自定义参数区（可按需修改）=========
+Const PWD_STR As String = "1"
+Const SOURCE_SHEET As String = "2"
+Const SOURCE_COL As String = "A"
+Const TARGET_CELL As String = "B10"
+Const PWD_CELL As String = "C5"
+Const RATIO_CELL As String = "D5"
+Const CURRENT_ROW_CELL As String = "F5" '当前行号保存单元格
+Const START_READ_ROW As Long = 2
+'=============================================
+
+'全局公共变量
+Public ReadRow As Long
+
+'===================== 【私有辅助子程序】仅模块内部调用，宏列表完全隐藏 =====================
+'1. 密码校验函数
+Private Function CheckPassword() As Boolean
+    Dim CellPwd As String
+    CellPwd = Trim(ActiveSheet.Range(PWD_CELL).Value)
+    
+    If CellPwd = PWD_STR Then
+        CheckPassword = True
+    Else
+        'MsgBox "C5授权字符错误，无法执行操作！", vbExclamation
+        CheckPassword = False
+    End If
+End Function
+
+'2. 同步F5行号到ReadRow（核心新增：F5修改后自动同步）
+Private Function SyncRowFromF5() As Boolean
+    Dim srcSht As Worksheet
+    Dim lastRow As Long
+    Dim inputVal As Variant
+    Dim newRow As Long
+    
+    '读取F5内容
+    inputVal = ActiveSheet.Range(CURRENT_ROW_CELL).Value
+    
+    'F5为空，不修改当前行号，直接返回成功
+    If IsEmpty(inputVal) Or Trim(inputVal) = "" Then
+        SyncRowFromF5 = True
+        Exit Function
+    End If
+    
+    '校验是否为数字
+    If Not IsNumeric(inputVal) Then
+        MsgBox "F5必须输入数字行号！", vbExclamation
+        SyncRowFromF5 = False
+        Exit Function
+    End If
+    
+    newRow = CLng(inputVal)
+    
+    '获取源数据最后一行，校验范围
+    Set srcSht = Sheets(SOURCE_SHEET)
+    If IsEmpty(srcSht.Range(SOURCE_COL & Rows.Count).End(xlUp).Value) Then
+        lastRow = START_READ_ROW
+    Else
+        lastRow = srcSht.Cells(Rows.Count, SOURCE_COL).End(xlUp).Row
+    End If
+    
+    '校验行号范围
+    If newRow < START_READ_ROW Then
+        MsgBox "F5行号不能小于起始行" & START_READ_ROW & "！", vbExclamation
+        SyncRowFromF5 = False
+        Exit Function
+    End If
+    
+    If newRow > lastRow Then
+        MsgBox "F5行号不能大于数据最后一行" & lastRow & "！", vbExclamation
+        SyncRowFromF5 = False
+        Exit Function
+    End If
+    
+    '校验通过，同步行号
+    ReadRow = newRow
+    SyncRowFromF5 = True
+End Function
+
+'3. 更新D5进度百分比（保留3位小数）
+Private Sub UpdateProgressRatio()
+    Dim srcSht As Worksheet
+    Dim lastRow As Long
+    Dim totalData As Long
+    Dim currentIndex As Long
+    Dim ratio As Double
+    
+    Set srcSht = Sheets(SOURCE_SHEET)
+    
+    '容错处理：空白列/无数据时默认取起始行
+    If IsEmpty(srcSht.Range(SOURCE_COL & Rows.Count).End(xlUp).Value) Then
+        lastRow = START_READ_ROW
+    Else
+        lastRow = srcSht.Cells(Rows.Count, SOURCE_COL).End(xlUp).Row
+    End If
+    
+    totalData = lastRow - START_READ_ROW + 1
+    currentIndex = ReadRow - START_READ_ROW + 1
+    
+    '防除以0报错
+    If totalData <= 0 Then
+        ratio = 0
+    Else
+        ratio = currentIndex / totalData
+    End If
+    
+    '设置3位小数百分比格式
+    ActiveSheet.Range(RATIO_CELL).NumberFormat = "0.000%"
+    ActiveSheet.Range(RATIO_CELL).Value = ratio
+End Sub
+
+'4. 复制表2A列数据到B10+刷新进度+更新F5行号
+Private Sub CopyDataToTarget()
+    Dim srcSht As Worksheet
+    Set srcSht = Sheets(SOURCE_SHEET)
+    ActiveSheet.Range(TARGET_CELL).Value = srcSht.Range(SOURCE_COL & ReadRow).Value
+    
+    '刷新进度
+    Call UpdateProgressRatio
+    '更新F5当前行号（核心新增：每次切换行自动保存到F5）
+    ActiveSheet.Range(CURRENT_ROW_CELL).Value = ReadRow
+End Sub
+
+'===================== 【公开宏】仅这3个会在Excel宏列表显示，用户可直接运行 =====================
+'【上一行】公开宏
+Public Sub PrevRow()
+    '先校验密码
+    If Not CheckPassword Then Exit Sub
+    '核心新增：先同步F5的行号，确保基于F5修改后的行号操作
+    If Not SyncRowFromF5 Then Exit Sub
+    
+    '初始化读取行
+    If ReadRow = 0 Then ReadRow = START_READ_ROW
+    ReadRow = ReadRow - 1
+    
+    '边界限制
+    If ReadRow < START_READ_ROW Then
+        MsgBox "已是第一条数据，无法上翻", vbInformation
+        ReadRow = START_READ_ROW
+        Exit Sub
+    End If
+    
+    Call CopyDataToTarget
+End Sub
+
+'【下一行】公开宏
+Public Sub NextRow()
+    '先校验密码
+    If Not CheckPassword Then Exit Sub
+    '核心新增：先同步F5的行号，确保基于F5修改后的行号操作
+    If Not SyncRowFromF5 Then Exit Sub
+    
+    Dim srcSht As Worksheet
+    Dim lastRow As Long
+    '初始化读取行
+    If ReadRow = 0 Then ReadRow = START_READ_ROW
+    
+    '容错：判断源工作表是否存在
+    On Error Resume Next
+    Set srcSht = Sheets(SOURCE_SHEET)
+    If Err.Number <> 0 Then
+        MsgBox "工作表【" & SOURCE_SHEET & "】不存在！", vbCritical
+        Err.Clear
+        Exit Sub
+    End If
+    On Error GoTo 0
+    
+    '获取最后一行数据
+    If IsEmpty(srcSht.Range(SOURCE_COL & Rows.Count).End(xlUp).Value) Then
+        lastRow = START_READ_ROW
+    Else
+        lastRow = srcSht.Cells(Rows.Count, SOURCE_COL).End(xlUp).Row
+    End If
+    
+    ReadRow = ReadRow + 1
+    
+    '边界限制
+    If ReadRow > lastRow Then
+        MsgBox "已是最后一条数据，无法下翻", vbInformation
+        ReadRow = lastRow
+        Exit Sub
+    End If
+    
+    Call CopyDataToTarget
+End Sub
+
+'【一键删除】公开宏：清空B10、C5、D5、F5，重置所有状态
+Public Sub ClearAllCells()
+    '清空指定单元格
+    ActiveSheet.Range(TARGET_CELL).ClearContents
+    ActiveSheet.Range(PWD_CELL).ClearContents
+    ActiveSheet.Range(RATIO_CELL).ClearContents
+    'ActiveSheet.Range(CURRENT_ROW_CELL).ClearContents '新增：清空F5行号
+    
+    '重置全局状态
+    ReadRow = 0
+    
+    'MsgBox "已一键清空B10、C5、D5、F5单元格，所有状态已重置！", vbInformation
+End Sub
