@@ -1,0 +1,189 @@
+Sub UTF8TxtToExcel_Fast()
+    Dim filePath As Variant
+    Dim stream As Object
+    Dim fullText As String
+    Dim paraArr As Variant
+    Dim onePara As String
+    Dim cellText As String
+    Dim i As Long, j As Long, arrIndex As Long
+    Dim reg As Object
+    Const MAX_CHR As Integer = 50
+    Dim outputArr() As Variant
+    
+    filePath = Application.GetOpenFilename("Text Files (*.txt),*.txt")
+    If filePath = False Then Exit Sub
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    
+    Set reg = CreateObject("VBScript.RegExp")
+    reg.Pattern = "^[ 　]+"
+    reg.Global = False
+    
+    '读取UTF‑8文本
+    Set stream = CreateObject("ADODB.Stream")
+    With stream
+        .Mode = 3
+        .Type = 2
+        .Charset = "UTF-8"
+        .Open
+        .LoadFromFile filePath
+        fullText = .ReadText
+        .Close
+    End With
+    Set stream = Nothing
+    
+    paraArr = Split(fullText, vbCrLf)
+    arrIndex = 1
+    '定义二维数组(行,列)，直接适配Excel单元格格式，避开Transpose乱码
+    ReDim outputArr(1 To 1000000, 1 To 1)
+    
+    For i = LBound(paraArr) To UBound(paraArr)
+        onePara = paraArr(i)
+        
+        '正则去除段首所有半角、全角空格
+        onePara = reg.Replace(onePara, "")
+        
+        '段首添加一个全角空格
+        If Len(onePara) > 0 Then
+            onePara = "　" & onePara
+        End If
+        
+        '移除全部等号
+        onePara = Replace(onePara, "=", "")
+        '过滤非法字符
+        onePara = CleanIllegalChars(onePara)
+        
+        '跳过空段落
+        If Len(onePara) = 0 Then GoTo NextPara
+        
+        '按50字符切割存入二维数组
+        For j = 1 To Len(onePara) Step MAX_CHR
+            cellText = Mid(onePara, j, MAX_CHR)
+            outputArr(arrIndex, 1) = cellText
+            arrIndex = arrIndex + 1
+        Next j
+        
+NextPara:
+    Next i
+    
+    '写入工作表，仅在存在有效数据时执行
+    If arrIndex > 1 Then
+        ReDim Preserve outputArr(1 To arrIndex - 1, 1 To 1)
+        Columns("A").NumberFormat = "@"
+        Range("A1").Resize(UBound(outputArr), 1).Value = outputArr
+    End If
+    
+    Columns("A").WrapText = True
+    
+    '恢复Excel设置
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    
+    MsgBox "转换完成！"
+End Sub
+
+'新子程序：读取工作表"1"的A列，使用相同文本规则输出至当前表A列
+Sub CopySheet1AToCurrent()
+    Dim srcWs As Worksheet
+    Dim sourceArr As Variant
+    Dim onePara As String, cellText As String
+    Dim i As Long, j As Long, arrIndex As Long
+    Dim reg As Object
+    Const MAX_CHR As Integer = 50
+    Dim outputArr() As Variant
+    Dim lastRow As Long
+    
+    On Error Resume Next
+    Set srcWs = Worksheets("1")
+    On Error GoTo 0
+    If srcWs Is Nothing Then
+        MsgBox "不存在名称为【1】的工作表！", vbExclamation
+        Exit Sub
+    End If
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    
+    Set reg = CreateObject("VBScript.RegExp")
+    reg.Pattern = "^[ 　]+"
+    reg.Global = False
+    
+    '获取Sheet1 A列最后一行
+    lastRow = srcWs.Cells(srcWs.Rows.Count, "A").End(xlUp).Row
+    If lastRow < 1 Then
+        Application.ScreenUpdating = True
+        Application.Calculation = xlCalculationAutomatic
+        Application.EnableEvents = True
+        MsgBox "工作表1的A列无数据！"
+        Exit Sub
+    End If
+    
+    '整列读取进数组
+    sourceArr = srcWs.Range("A1:A" & lastRow).Value
+    
+    arrIndex = 1
+    ReDim outputArr(1 To 1000000, 1 To 1)
+    
+    '循环每一行
+    For i = 1 To UBound(sourceArr)
+        onePara = CStr(sourceArr(i, 1))
+        
+        '去除段首所有半角/全角空格
+        onePara = reg.Replace(onePara, "")
+        '添加单个全角空格
+        If Len(onePara) > 0 Then
+            onePara = "　" & onePara
+        End If
+        '删除等号
+        onePara = Replace(onePara, "=", "")
+        '清洗非法字符
+        onePara = CleanIllegalChars(onePara)
+        
+        If Len(onePara) = 0 Then GoTo NextRow
+        
+        '按50字符拆分
+        For j = 1 To Len(onePara) Step MAX_CHR
+            cellText = Mid(onePara, j, MAX_CHR)
+            outputArr(arrIndex, 1) = cellText
+            arrIndex = arrIndex + 1
+        Next j
+        
+NextRow:
+    Next i
+    
+    '输出到当前激活工作表的A1
+    If arrIndex > 1 Then
+        ReDim Preserve outputArr(1 To arrIndex - 1, 1 To 1)
+        ActiveSheet.Columns("A").NumberFormat = "@"
+        ActiveSheet.Range("A1").Resize(UBound(outputArr), 1).Value = outputArr
+    End If
+    ActiveSheet.Columns("A").WrapText = True
+    
+    '恢复设置
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    
+    MsgBox "Sheet(1)A列处理完成，已输出至当前工作表A列！"
+End Sub
+
+'清洗非法字符函数（共用）
+Private Function CleanIllegalChars(ByVal inputStr As String) As String
+    Dim k As Long
+    Dim charCode As Long
+    Dim newStr As String
+    newStr = ""
+    
+    For k = 1 To Len(inputStr)
+        charCode = AscW(Mid(inputStr, k, 1))
+        '过滤控制字符、零宽字符，保留正常文字
+        If (charCode >= 32 Or charCode = 13 Or charCode = 10) And Not (charCode >= &H200B And charCode <= &H200F) Then
+            newStr = newStr & Mid(inputStr, k, 1)
+        End If
+    Next k
+    CleanIllegalChars = newStr
+End Function
