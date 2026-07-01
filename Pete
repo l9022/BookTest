@@ -1,0 +1,125 @@
+Option Explicit
+
+Sub ProcessSheet1ToSheet2_Updated()
+    ' 配置常量
+    Const MAX_CELL_CHARS As Long = 30 ' 单个单元格最大字符数30
+    Const FULL_WIDTH_SPACE As String = "　" ' 全角空格常量
+    Dim wsSource As Worksheet, wsTarget As Worksheet
+    Dim sourceData As Variant
+    Dim tempArr() As String ' 一维数组，支持ReDim Preserve无报错
+    Dim regClearHeadSpace As Object ' 清除开头连续空格正则
+    Dim regIsStartWithSpace As Object ' 判断行首是否为空格
+    Dim lastSourceRow As Long
+    Dim i As Long, j As Long, idx As Long
+    Dim rawText As String, processedText As String, splitText As String
+    Dim pureContent As String
+
+    ' 关闭Excel后台冗余操作提速
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+
+    ' 正则1：匹配行首全部半角/全角空格
+    Set regClearHeadSpace = CreateObject("VBScript.RegExp")
+    regClearHeadSpace.Global = False
+    regClearHeadSpace.Pattern = "^[ 　]+"
+
+    ' 正则2：判断文本开头第一个字符是否为半角/全角空格
+    Set regIsStartWithSpace = CreateObject("VBScript.RegExp")
+    regIsStartWithSpace.Global = False
+    regIsStartWithSpace.Pattern = "^[ 　]"
+
+    ' 工作表校验
+    On Error Resume Next
+    Set wsSource = Worksheets("1")
+    Set wsTarget = Worksheets("2")
+    On Error GoTo 0
+
+    If wsSource Is Nothing Then
+        Call ResetApp
+        MsgBox "错误：未找到工作表【1】", vbCritical
+        Exit Sub
+    End If
+    If wsTarget Is Nothing Then
+        Call ResetApp
+        MsgBox "错误：未找到工作表【2】", vbCritical
+        Exit Sub
+    End If
+
+    ' 清空目标表A列，设置文本格式+自动换行
+    wsTarget.Columns("A").ClearContents
+    wsTarget.Columns("A").NumberFormat = "@"
+    wsTarget.Columns("A").WrapText = True
+
+    ' 读取工作表1A列全部数据
+    lastSourceRow = wsSource.Cells(wsSource.Rows.Count, "A").End(xlUp).Row
+    If lastSourceRow < 1 Then
+        Call ResetApp
+        MsgBox "工作表1 A列无数据", vbInformation
+        Exit Sub
+    End If
+    sourceData = wsSource.Range("A1:A" & lastSourceRow).Value
+
+    ' 初始化存储数组
+    ReDim tempArr(1 To 1)
+    idx = 1
+
+    For i = 1 To UBound(sourceData)
+        rawText = CStr(sourceData(i, 1))
+        ' 去除首尾空白判断空行，空白行直接跳过
+        Dim trimTxt As String
+        trimTxt = Trim(regClearHeadSpace.Replace(rawText, ""))
+        If trimTxt = "" Then GoTo NextRow
+
+        ' 提取去掉行首空格后的纯内容
+        pureContent = regClearHeadSpace.Replace(rawText, "")
+
+        ' 判断：原内容开头是空格 → 替换为1个全角空格 + 内容
+        If regIsStartWithSpace.Test(rawText) Then
+            processedText = FULL_WIDTH_SPACE & pureContent
+        Else
+            ' 行首无空格，保持原样不额外加空格
+            processedText = pureContent
+        End If
+
+        ' 删除全部=号
+        processedText = Replace(processedText, "=", "")
+
+        ' 按30字符分割，保留原文换行
+        For j = 1 To Len(processedText) Step MAX_CELL_CHARS
+            splitText = Mid(processedText, j, MAX_CELL_CHARS)
+            tempArr(idx) = splitText
+            idx = idx + 1
+            ReDim Preserve tempArr(1 To idx)
+        Next j
+
+NextRow:
+    Next i
+
+    Dim totalValid As Long
+    totalValid = idx - 1
+    If totalValid >= 1 Then
+        ReDim Preserve tempArr(1 To totalValid)
+        ' 构建二维数组写入，无Transpose，不乱码
+        Dim writeArr() As Variant
+        ReDim writeArr(1 To totalValid, 1 To 1)
+        For i = 1 To totalValid
+            writeArr(i, 1) = tempArr(i)
+        Next i
+        wsTarget.Range("A1").Resize(totalValid, 1).Value = writeArr
+    Else
+        Call ResetApp
+        MsgBox "处理后无有效内容输出", vbInformation
+        Exit Sub
+    End If
+
+    Call ResetApp
+    MsgBox "处理完成！数据已写入工作表2 A列", vbInformation
+End Sub
+
+' 恢复Excel默认设置
+Private Sub ResetApp()
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+End Sub
