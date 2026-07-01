@@ -1,0 +1,3 @@
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    Call StopTimerTask
+End Sub
