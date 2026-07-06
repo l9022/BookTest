@@ -1,0 +1,100 @@
+Sub SyncSheetFromExternalFile()
+    '===================== 自定义配置区（按需修改）=====================
+    Const ExternalFilePath As String = "D:\数据文件.xlsx" '外部文件完整路径
+    Const SetSheetName As String = "Set"     '存放表名列表的工作表名
+    Const StartRow_Set As Long = 2           'Set表A列表名从第2行开始，跳过表头
+    Const CopyRowCount As Long = 100         '从底部向上取100行
+    '==================================================================
+    
+    Dim wbSrc As Workbook, wbThis As Workbook
+    Dim shtSet As Worksheet, shtSrc As Worksheet, shtTar As Worksheet
+    Dim lastRow_Set As Long, i As Long
+    Dim srcLastRow As Long, copyStartRow As Long, copyEndRow As Long
+    Dim fileExist As Boolean
+    
+    Set wbThis = ThisWorkbook
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    '1. 判断外部文件是否存在
+    fileExist = (Dir(ExternalFilePath) <> "")
+    If Not fileExist Then
+        MsgBox "外部文件不存在：" & ExternalFilePath, vbCritical
+        GoTo RestoreSetting
+    End If
+    
+    '2. 只读打开外部源文件
+    Set wbSrc = Workbooks.Open(Filename:=ExternalFilePath, ReadOnly:=True)
+    
+    '3. 检查当前工作簿是否存在Set工作表
+    On Error Resume Next
+    Set shtSet = wbThis.Worksheets(SetSheetName)
+    On Error GoTo 0
+    If shtSet Is Nothing Then
+        MsgBox "当前文件缺少工作表【" & SetSheetName & "】", vbCritical
+        wbSrc.Close SaveChanges:=False
+        GoTo RestoreSetting
+    End If
+    
+    lastRow_Set = shtSet.Cells(shtSet.Rows.Count, "A").End(xlUp).Row
+    
+    '4. 遍历Set表A列所有目标表名
+    For i = StartRow_Set To lastRow_Set
+        Dim sheetName As String
+        sheetName = Trim(shtSet.Range("A" & i).Value)
+        If sheetName = "" Then GoTo NextLoop
+        
+        '4.1 外部文件查找对应工作表
+        On Error Resume Next
+        Set shtSrc = wbSrc.Worksheets(sheetName)
+        On Error GoTo 0
+        If shtSrc Is Nothing Then
+            MsgBox "外部文件不存在工作表：" & sheetName & "，已跳过", vbExclamation
+            GoTo NextLoop
+        End If
+        
+        '4.2 当前工作簿查找同名表，不存在则新建
+        On Error Resume Next
+        Set shtTar = wbThis.Worksheets(sheetName)
+        On Error GoTo 0
+        If shtTar Is Nothing Then
+            Set shtTar = wbThis.Worksheets.Add(After:=wbThis.Worksheets(wbThis.Worksheets.Count))
+            shtTar.Name = sheetName
+        End If
+        
+        '4.3 获取源表最后一行数据
+        srcLastRow = shtSrc.Cells(shtSrc.Rows.Count, 1).End(xlUp).Row
+        copyEndRow = srcLastRow
+        copyStartRow = copyEndRow - CopyRowCount + 1
+        If copyStartRow < 1 Then copyStartRow = 1
+        
+        '清空目标表旧数据
+        shtTar.Cells.Clear
+        
+        '4.4 复制表头第一行 + 底部向上100行
+        '先复制第一行（表头）
+        shtSrc.Rows("1:1").Copy
+        shtTar.Range("A1").PasteSpecial Paste:=xlPasteAll
+        Application.CutCopyMode = False
+        
+        '再复制底部100行，粘贴到目标表第二行开始
+        shtSrc.Rows(copyStartRow & ":" & copyEndRow).Copy
+        shtTar.Range("A2").PasteSpecial Paste:=xlPasteAll
+        Application.CutCopyMode = False
+        
+        MsgBox "【" & sheetName & "】同步完成：复制表头1行 + 底部" & copyEndRow - copyStartRow + 1 & "行", vbInformation
+        
+NextLoop:
+        Set shtSrc = Nothing
+        Set shtTar = Nothing
+    Next i
+    
+    '关闭外部文件，不保存修改
+    wbSrc.Close SaveChanges:=False
+    MsgBox "全部工作表同步执行完成！", vbInformation
+
+RestoreSetting:
+    '恢复Excel界面设置
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+End Sub
