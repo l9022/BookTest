@@ -1,12 +1,12 @@
 '=========自定义参数区（可按需修改）=========
-Const PWD_STR As String = "1"
-Const SOURCE_SHEET As String = "2"
-Const SOURCE_COL As String = "A"
-Const TARGET_CELL As String = "B10"
-Const PWD_CELL As String = "C5"
-Const RATIO_CELL As String = "D5"
+Const PWD_STR As String = "1" '操作授权自定义字符
+Const PWD_CELL As String = "C5" '操作授权输入位置：当前工作表C5
+Const SOURCE_SHEET As String = "2" '源数据表 2
+Const SOURCE_COL As String = "A" '源数据列（A列）
+Const TARGET_CELL As String = "B10" '输出：当前工作表B10
+Const RATIO_CELL As String = "D5" '进度百分比输出单元格
 Const CURRENT_ROW_CELL As String = "F5" '当前行号保存单元格
-Const START_READ_ROW As Long = 2
+Const START_READ_ROW As Long = 2 '初始读取行（1为第一行数据，2跳过表头）
 '=============================================
 
 '全局公共变量
