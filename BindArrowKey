@@ -1,0 +1,37 @@
+Public Sub BindArrowKey()
+    '^ 代表Ctrl，{UP}上箭头
+    Application.OnKey "^{UP}", "PrevRow"
+    Application.OnKey "^{DOWN}", "NextRow"
+    MsgBox "绑定 Ctrl+↑ Ctrl+↓ 切换行，原生上下键正常移动单元格", vbInformation
+End Sub
+
+---------------------------------------------------------------------------------
+
+'===================== 新增：方向键绑定、解绑 =====================
+'一键绑定上下箭头，按下↑↓直接执行切换行
+Public Sub BindArrowKey()
+    '绑定上箭头 = 上一行宏
+    Application.OnKey "{UP}", "PrevRow"
+    '绑定下箭头 = 下一行宏
+    Application.OnKey "{DOWN}", "NextRow"
+    MsgBox "已绑定键盘↑↓方向键，按上下键即可切换行", vbInformation
+End Sub
+
+'解除绑定，恢复Excel原生上下移动单元格功能
+Public Sub UnBindArrowKey()
+    '第二个参数留空 = 恢复按键默认行为
+    Application.OnKey "{UP}"
+    Application.OnKey "{DOWN}"
+    MsgBox "已解除↑↓绑定，恢复Excel默认方向键", vbInformation
+End Sub
+
+'双击工程窗口 ThisWorkbook，粘贴以下代码，自动生效无需手动运行绑定
+'文件打开自动绑定上下键
+Private Sub Workbook_Open()
+    Call BindArrowKey
+End Sub
+
+'文件关闭自动解绑，防止全局Excel方向键失灵
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    Call UnBindArrowKey
+End Sub
